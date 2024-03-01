@@ -1,1 +1,1 @@
-# Data-Mining-in-SQL
+# About this project
