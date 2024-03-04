@@ -1,90 +1,129 @@
---Lưu ý chung: với Bigquery thì mình có thể group by, order by 1,2,3(1,2,3() ở đây là thứ tự của column mà mình select nhé
---Mình k nên xử lý date bằng những hàm đc dùng để xử lý chuỗi như left, substring, concat
---vì lúc này data của mình vẫn ở dạng string, chứ k phải dạng date, khi xuất ra excel hay gg sheet thì phải xử lý thêm 1 bước nữa
-
-
--- Query 01: calculate total visit, pageview, transaction for Jan, Feb and March 2017 (order by month)
+/* Query 01: calculate total visits, page views, and transactions for Jan, Feb, and March 2017 (order by month) */
 
 SELECT  
-  LEFT(date,6) as month,  --> format_date("%Y%m", parse_date("%Y%m%d", date)) as month
-  sum(totals.visits) visits,
-  sum(totals.pageviews) pageviews,
-  sum(totals.transactions) transactions
+  Format_date("%Y%m", parse_date("%Y%m%d", date)) as month  -- Chuyển đổi định dạng 'Date' từ YYYYMMDD sang YYYYMM
+  
+  sum(totals.visits) as visits,                             -- Tính tổng lượt thăm trang web, gán metric này tên "Visits"
+  
+  sum(totals.pageviews) as pageviews,                       -- Tính tổng lượt bấm lướt các trang trên trang web, gán metric này tên "pageviews"
+  
+  sum(totals.transactions) as transactions                  -- Tính tổng lượt giao dịch, gán metric này tên "transactions"
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_2017*`
-WHERE _table_suffix between '0101' and '0331'
-GROUP BY month
-ORDER BY month ASC;
---correct
+  
+WHERE _table_suffix between '0101' and '0331'               -- Giới hạn data trong khoảng từ tháng 1 đến tháng 3 
+  
+GROUP BY month                                              -- Nhóm các giá trị trả lại theo tháng
+        
+ORDER BY month ASC;                                         -- Sắp xếp theo tháng, thứ tự tăng dần (1 -> 3)
 
--- Query 02: Bounce rate per traffic source in July 2017 (Bounce_rate = num_bounce/total_visit) (order by total_visit DESC)
+
+/* Query 02: Bounce rate per traffic source in July 2017 */
 
 SELECT  
-  trafficSource.source as source,
-  sum(totals.visits) AS total_visit,
-  count(totals.bounces) as total_num_of_bounce,
-  round((100.00 * (count(totals.bounces))/(sum(totals.visits))),2) as Bounce_rate
+  trafficSource.source as source,                                                   -- Chọn cột "trafficSource" từ bảng "source"
+  
+  sum(totals.visits) AS total_visit,                                                -- Tính tổng lượt thăm trang web, gán metric này tên "total_visit"
+  
+  count(totals.bounces) as total_num_of_bounce,                                     -- Đếm lượt "bounces - visitor chỉ xem trang landing page, không xem trang thứ hai", đặt tên metric này là "total_num_of_bounce"
+                                                                                  
+  round((100.00 * (count(totals.bounces))/(sum(totals.visits))),2) as Bounce_rate   -- Tính "Bounce_rate - Tỷ lệ thoát" bằng cách lấy "Tổng lượt thoát" chia cho "Tổng số thăm trang", nhân 100, và làm tròn kết quả 2 chữ số sau dấu phẩy.
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_201707*`
-GROUP BY source 
-ORDER BY total_visit DESC;
---correct
+  
+GROUP BY source                                                                     -- Nhóm các giá trị trả lại theo nguồn truy cập (source)
+  
+ORDER BY total_visit DESC;                                                          -- Sắp xếp tổng lượt truy cập trang web, thứ tự giảm dần.
 
--- Query 3: Revenue by traffic source by week, by month in June 2017
+/* Query 3: Revenue by traffic source by week, by month in June 2017 */
 
-with month_revenue as (
+with month_revenue as (                                                             -- Khởi tạo CTE, tên là "month_revenue"
   SELECT 
   'month' as time_type,
+  
   FORMAT_DATE('%Y%m', DATETIME (PARSE_DATE('%Y%m%d', date))) as time,
+  
   trafficSource.source as source,
-  (SUM(productRevenue)/1000000) AS Revenue
+  
+  (SUM(productRevenue)/1000000) AS Revenue                                          -- Tính tổng doanh thu của sản phẩm (chia bớt 6 số 0 để gọn số), gán giá trị với tên "Revenue"
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_201706*`,
-UNNEST (hits) hits,
+  
+UNNEST (hits) hits,                                                                 -- Dùng "Unnest" để tiếp cận Array cần lấy giá trị. Ở đây muốn tiếp cận cột "productRevenue" thì phải "Unnest" bảng "hits" và bảng "hits.product".
 UNNEST (hits.product) product
-WHERE productRevenue is not null
-group by source,time),
+  
+WHERE productRevenue is not null                                                    -- Đặt điều kiện "productRevenue" is not null
+  
+group by source,time),                                                              -- Nhóm kết quả bằng cột "time" trong bảng "source"
 
-week_revenue as (
+
+week_revenue as (                                                                   -- Khởi tạo CTE, tên là "week_revenue"                                                 
   SELECT 
   'week' as time_type,
-  FORMAT_DATE('%Y%W', DATETIME (PARSE_DATE('%Y%m%d', date))) as time,
+  
+  FORMAT_DATE('%Y%W', DATETIME (PARSE_DATE('%Y%m%d', date))) as time,                
+  
   trafficSource.source as source,
-  (SUM(productRevenue)/1000000) AS Revenue
+  
+  (SUM(productRevenue)/1000000) AS Revenue                                          -- Tổng Doanh thu sản phẩm (chia 6 số không) 
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_201706*`,
+  
 UNNEST (hits) hits,
 UNNEST (hits.product) product
+  
 WHERE productRevenue is not null
+  
 GROUP BY source,time)
 
+  
 SELECT *
 FROM month_revenue
-UNION ALL
+  
+UNION ALL                                                                            -- Ghép 2 CTEs lại tạo thành 1 bảng kết quả chứa "Doanh thu theo traffic" tính theo tuần và tháng.
+  
 SELECT * 
 FROM week_revenue;
---correct
 
--- Query 04: Average number of pageviews by purchaser type (purchasers vs non-purchasers) in June, July 2017.
+/* Query 04: Average number of pageviews by purchaser type (purchasers vs non-purchasers) in June, and July 2017. */
 
 WITH P1 AS (
 SELECT  
   FORMAT_DATE('%Y%m', DATETIME (PARSE_DATE('%Y%m%d', date))) as month,
-  SUM(totals.pageviews)/COUNT(DISTINCT fullVisitorId) as avg_pageviews_purchase
+  
+  SUM(totals.pageviews)/COUNT(DISTINCT fullVisitorId) as avg_pageviews_purchase      -- Tính AVG pageView/mỗi Lần vào website (= tổng pageView / Lần vào website)
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_2017*`,
+  
 UNNEST (hits) hits,
 UNNEST (hits.product) product
-WHERE _table_suffix between '0601' and '0731' and
+  
+WHERE _table_suffix between '0601' and '0731' and                                    -- Sử dụng Wildcard _table_suffix để 
+  
       totals.transactions >=1 and
+  
       productRevenue is not null
+  
 GROUP BY month),
 
 p2 as (
 SELECT  
+  
   FORMAT_DATE('%Y%m', DATETIME (PARSE_DATE('%Y%m%d', date))) as month,
+  
   SUM(totals.pageviews)/COUNT(DISTINCT fullVisitorId) as avg_pageviews_non_purchase
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_2017*`,
+  
 UNNEST (hits) hits,
 UNNEST (hits.product) product
+  
 WHERE _table_suffix between '0601' and '0731' and
+  
       totals.transactions is null and
+  
       productRevenue is null
+  
 GROUP BY month)
 
 SELECT *
@@ -96,53 +135,77 @@ USING (month);
 --mình inner join thì vô tình nó sẽ ra đúng. nhưng nếu đề bài là 1 khoảng thời gian dài hơn, 2-3 năm chẳng hạn, nó cũng tháng chỉ có nonpur mà k có pur
 --thì khi đó inner join nó sẽ làm mình bị mất data, thay vì hiện số của nonpur và pur thì nó để trống
 
--- Query 05: Average number of transactions per user that made a purchase in July 2017
+/* Query 05: Average number of transactions per user that purchased in July 2017 */
 
 SELECT  
+  
   FORMAT_DATE('%Y%m', DATETIME (PARSE_DATE('%Y%m%d', date))) as month,
+  
   (SUM(totals.transactions)) / COUNT(distinct fullVisitorId) as Avg_total_transactions_per_user
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_201707*`,
+  
 UNNEST (hits) hits,
 UNNEST (hits.product) product
+  
 WHERE totals.transactions >=1 and
+  
       productRevenue is not null
+  
 GROUP BY month;
---correct
 
--- Query 06: Average amount of money spent per session. Only include purchaser data in July 2017
+/* Query 06: Average amount of money spent per session. Only include purchaser data in July 2017 */
 
 SELECT  
   FORMAT_DATE('%Y%m', DATETIME (PARSE_DATE('%Y%m%d', date))) as month,
+  
   ROUND(
     (((SUM(productRevenue)) / COUNT(totals.visits))/1000000),2) as Avg_total_transactions_per_user
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_201707*`,
+  
 UNNEST (hits) hits,
 UNNEST (hits.product) product
+  
 WHERE totals.transactions >=1 and
+  
       productRevenue is not null
+  
 GROUP BY month;
---correct
 
--- Query 07: Other products purchased by customers who purchased product "YouTube Men's Vintage Henley" in July 2017. Output should show product name and the quantity was ordered.
+/* Query 07: Other products purchased by customers who purchased the product "YouTube Men's Vintage Henley" in July 2017. The output should show the product name and the quantity ordered. */
 
 with user1 as(
 SELECT 
+  
       fullVisitorId
+  
  FROM `bigquery-public-data.google_analytics_sample.ga_sessions_201707*`,
+  
 UNNEST (hits) hits,
 UNNEST (hits.product) product
+  
 WHERE v2ProductName = "YouTube Men's Vintage Henley" and
+  
       productRevenue is not null
+  
 GROUP BY fullVisitorId)
 
 SELECT  
+  
       v2ProductName AS other_purchased_products,
+  
       SUM(productQuantity) AS quantity
+  
 FROM `bigquery-public-data.google_analytics_sample.ga_sessions_201707*` as p2,
+  
 UNNEST (hits) hits,
 UNNEST (hits.product) product
-LEFT JOIN user1 ON user1.fullVisitorId = p2.fullVisitorId   --> inner join
+  
+LEFT JOIN user1 ON user1.fullVisitorId = p2.fullVisitorId  --> inner join
+  
 WHERE productRevenue is not null
+  
 GROUP BY v2ProductName;
 --> ở phần này thì mình nên dùng inner join, bởi vì mình chỉ muốn lấy tập giao của fullvisitorId thôi 
 
